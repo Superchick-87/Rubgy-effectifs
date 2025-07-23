@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Effectifs Rugby</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="css/styles-front.css">
+
+</head>
+
+<body>
+  <div id="compteur"
+    style="display: none; position: fixed; bottom: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 8px; font-size: 14px; box-shadow: 0 0 5px rgba(0,0,0,0.2); z-index: 1000;">
+    Visiteurs aujourd’hui : <span id="visites-jour">…</span><br>
+    Total : <span id="visites-total">…</span>
+  </div>
+
+
+  <div id="app">
+    <!-- Fond d'écran -->
+    <div v-if="selectedClub !== 'Tout'" class="background-logo">
+      <img :src="getClubLogoUrl(selectedClub)" :alt="selectedClub" />
+    </div>
+
+    <!-- Barre fixe avec titre, menus, et petit logo -->
+    <div class="top-bar">
+      <h1>Effectifs des clubs de rugby 2025 / 2026</h1>
+      <div class="filters">
+        <div>
+          <select v-model="selectedClub">
+            <option value="Tout">Tous les clubs</option>
+            <option v-for="club in uniqueClubs" :key="club" :value="club">{{ club }}</option>
+          </select>
+        </div>
+        <div>
+          <select v-model="selectedPoste">
+            <option value="Tout">Choisissez un poste</option>
+            <option v-for="poste in uniquePostes" :key="poste" :value="poste">{{ poste }}</option>
+          </select>
+        </div>
+        <div>
+          <select v-model="selectedDivision">
+            <option value="Tout">Choisissez un championnat</option>
+            <option v-for="division in uniqueDivisions" :key="division" :value="division">{{ division }}</option>
+          </select>
+        </div>
+        <div id="ecusson-tete" :class="selectedClub !== 'Tout' ? 'logo-titre' : 'no-display'">
+          <img :src="getClubLogoUrl(selectedClub)" class="small-logo" :alt="selectedClub" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Contenu -->
+    <div :class="['table-wrapper', selectedClub !== 'Tout' ? 'container' : '']">
+      <div v-for="(players, poste) in sortedPlayersGroupedByPoste" :key="poste">
+        
+        <h2>{{ poste }}</h2>
+
+        <div class="poste-illustration-wrapper">
+          <!-- Vignette gauche -->
+          <div v-if="showVignettes(poste) && players.length > 1" class="vignette enfant-1">
+            <div class="vignette-content" :id="`vignette-left-${normalizePoste(poste)}`">
+              <h4>{{ getLeftLabel(poste) }}</h4>
+              <img v-if="players[0].club" :src="getClubLogoUrl(players[0].club)" class="logo"
+                :alt="`Logo ${players[0].club}`" />
+              <img v-if="players[0].pays" :src="getFlagUrl(players[0].pays)" class="flag"
+                :alt="`Drapeau ${players[0].pays}`" />
+              <div class="vignette-nom">{{ players[0].nom_complet }}</div>
+              <div class="vignette-detail">{{ calculateAge(players[0].date_naissance) }} ans</div>
+              <div class="vignette-detail">{{ players[0].taille }} cm</div>
+              <div class="vignette-detail">{{ players[0].poids }} kg</div>
+            </div>
+          </div>
+
+          <!-- Illustration centrale -->
+          <div class="poste-illustration  enfant-2">
+            <img :src="`images/${normalizePoste(poste)}.png`" class="illus-poste"
+              :alt="`Illustration du poste ${poste}`" />
+          </div>
+
+          <!-- Vignette droite -->
+          <div v-if="showVignettes(poste) && players.length > 1" class="vignette enfant-3">
+            <div class="vignette-content" :id="`vignette-right-${normalizePoste(poste)}`">
+              <h4>{{ getRightLabel(poste) }}</h4>
+              <img v-if="players[players.length - 1].club" :src="getClubLogoUrl(players[players.length - 1].club)"
+                class="logo" :alt="`Logo ${players[players.length - 1].club}`" />
+              <img v-if="players[players.length - 1].pays" :src="getFlagUrl(players[players.length - 1].pays)"
+                class="flag" :alt="`Drapeau ${players[players.length - 1].pays}`" />
+              <div class="vignette-nom">{{ players[players.length - 1].nom_complet }}</div>
+              <div class="vignette-detail">{{ calculateAge(players[players.length - 1].date_naissance) }} ans</div>
+              <div class="vignette-detail">{{ players[players.length - 1].taille }} cm</div>
+              <div class="vignette-detail">{{ players[players.length - 1].poids }} kg</div>
+            </div>
+          </div>
+        </div>
+
+       <table>
+        <thead>
+          <tr>
+            <!-- Colonne écusson du club, affichée seulement si selectedClub === 'Tout' -->
+            <th id="ecusson-tableau-tete" :class="['show', selectedClub !== 'Tout' ? 'hide' : '']"></th>
+            <th></th>
+            <th>Nom</th>
+            
+            <!-- Colonnes triables -->
+            <th @click="sortBy('age', poste)">
+              <span class="sortable-header">
+                <span class="hide-on-mobile">Âge</span>
+                <span class="sort-icon">{{ getSortIcon(poste, 'age') }}</span>
+              </span>
+            </th>
+            
+            <th @click="sortBy('taille', poste)">
+              <span class="sortable-header">
+                <span class="hide-on-mobile">Taille</span>
+                <span class="sort-icon">{{ getSortIcon(poste, 'taille') }}</span>
+              </span>
+            </th>
+
+            <th @click="sortBy('poids', poste)">
+              <span class="sortable-header">
+                <span class="hide-on-mobile">Poids</span>
+                <span class="sort-icon">{{ getSortIcon(poste, 'poids') }}</span>
+              </span>
+            </th>
+          </tr>
+        </thead>
+        
+        <tbody>
+          <!-- Parcours les joueurs triés du poste en cours -->
+          <tr v-for="player in sortedPlayersGroupedByPoste[poste]" :key="player.nom_complet">
+            <!-- Colonne écusson du club -->
+            <td id="ecusson-tableau" :class="['show', selectedClub !== 'Tout' ? 'hide' : '']">
+              <img :src="getClubLogoUrl(player.club)" class="logo" :alt="player.club" />
+            </td>
+
+            <!-- Colonne drapeau pays -->
+            <td>
+              <img :src="getFlagUrl(player.pays)" class="flag" :alt="player.pays" />
+            </td>
+
+            <td>{{ player.nom_complet }}</td>
+            <td class="detail">{{ calculateAge(player.date_naissance) }} ans</td>
+            <td class="detail">{{ player.taille }} cm</td>
+            <td class="detail">{{ player.poids }} kg</td>
+          </tr>
+        </tbody>
+      </table>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, watch } = Vue
+
+    createApp({
+      setup() {
+        const data = ref([])
+        const selectedClub = ref('Tout')
+        const selectedPoste = ref('Tout')
+        const selectedDivision = ref('Tout')
+
+        const sortOptions = ref({})
+
+        const fetchData = async () => {
+          try {
+            const res = await fetch('datas/players.json')
+            if (!res.ok) throw new Error('Erreur chargement JSON')
+            data.value = await res.json()
+          } catch (e) {
+            console.error(e)
+          }
+        }
+
+        onMounted(async () => {
+          await fetchData()
+
+          const defaultSortPerPoste = {
+            'Pilier': { key: 'age', order: -1 },
+            'Talonneur': { key: 'age', order: -1 },
+            '2ème ligne': { key: 'taille', order: -1 },
+            '3ème ligne': { key: 'taille', order: -1 },
+            'Mêlée': { key: 'taille', order: -1 },
+            "Ouverture": { key: 'age', order: -1 },
+            'Centre': { key: 'taille', order: -1 },
+            'Ailier': { key: 'poids', order: 1 },
+            'Arrière': { key: 'age', order: -1 }
+          }
+
+          const postes = [...new Set(data.value.map(p => p.poste))]
+          postes.forEach(poste => {
+            sortOptions.value[poste] = defaultSortPerPoste[poste] || { key: 'age', order: -1 }
+          })
+        })
+
+        // affichage "championnat" dans l'ordre du json
+        // const uniqueDivisions = computed(() => [...new Set(data.value.map(p => p.division))])
+        
+        const divisionOrder = ['Top 14', 'Pro D2', 'Nationale']
+        const uniqueDivisions = computed(() => {
+          const divisions = [...new Set(data.value.map(p => p.division))]
+          return divisionOrder.filter(d => divisions.includes(d))
+        })
+
+        // affichage dans select "postes" dans l'ordre du json
+        // const uniquePostes = computed(() => [...new Set(data.value.map(p => p.poste))])
+        
+        // affichage ordre personnalisé
+        // const posteOrder = ['Pilier', 'Talonneur', '2ème ligne', '3ème ligne', 'Mêlée', 'Ouverture', 'Centre', 'Ailier', 'Arrière']
+        // const uniquePostes = computed(() => {
+        //   const postes = [...new Set(data.value.map(p => p.poste))]
+        //   return posteOrder.filter(p => postes.includes(p)) // Respecte l'ordre défini
+        // })
+
+        // Ordre fixe des postes (même utilisé pour le select et l'affichage)
+        const posteOrder = ['Pilier', 'Talonneur', '2ème ligne', '3ème ligne', 'Mêlée', 'Ouverture', 'Centre', 'Ailier', 'Arrière']
+
+        // Computed pour les postes uniques dans cet ordre, mais uniquement ceux qui existent dans les données
+        const uniquePostes = computed(() => {
+          const postesExistants = new Set(data.value.map(p => p.poste))
+          return posteOrder.filter(poste => postesExistants.has(poste))
+        })
+
+
+
+        const uniqueClubs = computed(() => {
+          const filtered = selectedDivision.value === 'Tout'
+            ? data.value
+            : data.value.filter(p => p.division === selectedDivision.value)
+          return [...new Set(filtered.map(p => p.club))]
+        })
+
+        const sortedPlayersGroupedByPoste = computed(() => {
+          const groups = {}
+          const filtered = data.value.filter(p =>
+            (selectedClub.value === 'Tout' || p.club === selectedClub.value) &&
+            (selectedPoste.value === 'Tout' || p.poste === selectedPoste.value) &&
+            (selectedDivision.value === 'Tout' || p.division === selectedDivision.value)
+          )
+
+          filtered.forEach(p => {
+            const poste = p.poste
+            if (!groups[poste]) groups[poste] = []
+            groups[poste].push(p)
+          })
+
+          for (const poste in groups) {
+            const { key, order } = sortOptions.value[poste] || {}
+            if (key) {
+              groups[poste].sort((a, b) => {
+                const valA = key === 'age' ? new Date(a.date_naissance) : a[key]
+                const valB = key === 'age' ? new Date(b.date_naissance) : b[key]
+                return (valA < valB ? -1 : valA > valB ? 1 : 0) * order
+              })
+            }
+          }
+
+          return groups
+        })
+
+        const sortBy = (key, poste) => {
+          const current = sortOptions.value[poste] || {}
+
+          if (current.key === key) {
+            current.order *= -1
+          } else {
+            current.key = key
+            current.order = 1
+          }
+
+          sortOptions.value[poste] = current
+
+          // Animation flip sur les vignettes
+          const normalized = normalizePoste(poste)
+
+          const leftEl = document.getElementById(`vignette-left-${normalized}`)
+          const rightEl = document.getElementById(`vignette-right-${normalized}`)
+
+          if (leftEl) {
+            leftEl.classList.remove('flip')
+            void leftEl.offsetWidth // force reflow
+            leftEl.classList.add('flip')
+          }
+
+          if (rightEl) {
+            rightEl.classList.remove('flip')
+            void rightEl.offsetWidth
+            rightEl.classList.add('flip')
+          }
+        }
+
+        const getSortIcon = (poste, key) => {
+          const current = sortOptions.value[poste]
+          if (!current || current.key !== key) return '↕'
+          return current.order === 1 ? '↑' : '↓'
+        }
+
+        const getLeftLabel = (poste) => {
+          const current = sortOptions.value[poste]
+          if (!current) return ''
+          switch (current.key) {
+            case 'age':
+              return current.order === 1 ? "Le plus vieux" : "Le plus jeune"
+            case 'taille':
+              return current.order === 1 ? "Le plus petit" : "Le plus grand"
+            case 'poids':
+              return current.order === 1 ? "Le plus léger" : "Le plus lourd"
+            default:
+              return ''
+          }
+        }
+
+        const getRightLabel = (poste) => {
+          const current = sortOptions.value[poste]
+          if (!current) return ''
+          switch (current.key) {
+            case 'age':
+              return current.order === 1 ? "Le plus jeune" : "Le plus vieux"
+            case 'taille':
+              return current.order === 1 ? "Le plus grand" : "Le plus petit"
+            case 'poids':
+              return current.order === 1 ? "Le plus lourd" : "Le plus léger"
+            default:
+              return ''
+          }
+        }
+
+        const showVignettes = (poste) => {
+          const current = sortOptions.value[poste]
+          return current && ['age', 'taille', 'poids'].includes(current.key)
+        }
+
+        const calculateAge = (dateString) => {
+          const today = new Date()
+          const birthDate = new Date(dateString)
+          let age = today.getFullYear() - birthDate.getFullYear()
+          const m = today.getMonth() - birthDate.getMonth()
+          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--
+          }
+          return age
+        }
+
+        const logos = {
+
+          "Aviron Bayonnais": "https://upload.wikimedia.org/wikipedia/fr/thumb/1/1b/Logo_Aviron_Bayonnais_Rugby_-_2022.svg/1200px-Logo_Aviron_Bayonnais_Rugby_-_2022.svg.png",
+          "Aurillac": "https://upload.wikimedia.org/wikipedia/fr/thumb/c/c2/Logo_Stade_aurillacois_Cantal_Auvergne_2018.svg/768px-Logo_Stade_aurillacois_Cantal_Auvergne_2018.svg.png",
+          "Asbh": "https://upload.wikimedia.org/wikipedia/fr/thumb/1/14/Logo_AS_B%C3%A9ziers_H%C3%A9rault.svg/800px-Logo_AS_B%C3%A9ziers_H%C3%A9rault.svg.png",
+          "Union Bordeaux Begles": "https://upload.wikimedia.org/wikipedia/fr/thumb/3/30/Logo_Union_Bordeaux_B%C3%A8gles_2018.svg/2048px-Logo_Union_Bordeaux_B%C3%A8gles_2018.svg.png",
+          "Castres Olympique": "https://upload.wikimedia.org/wikipedia/fr/thumb/9/94/Castres_Olympique.svg/800px-Castres_Olympique.svg.png",
+          "Grenoble Rugby": "https://upload.wikimedia.org/wikipedia/fr/thumb/4/46/Logo_FC_Grenoble_Rugby.svg/1200px-Logo_FC_Grenoble_Rugby.svg.png",
+          "Ca Brive Correze Limousin": "https://upload.wikimedia.org/wikipedia/fr/thumb/5/56/Club_athl%C3%A9tique_Brive_Corr%C3%A8ze_Limousin_logo.svg/1200px-Club_athl%C3%A9tique_Brive_Corr%C3%A8ze_Limousin_logo.svg.png",
+          "Colomiers": "https://upload.wikimedia.org/wikipedia/fr/thumb/e/e9/Logo_Colomiers_Rugby_2008.svg/1883px-Logo_Colomiers_Rugby_2008.svg.png",
+          "Carcassonne": "https://upload.wikimedia.org/wikipedia/fr/thumb/2/26/Logo_US_Carcassonne_-_2023.svg/langfr-800px-Logo_US_Carcassonne_-_2023.svg.png",
+          "Sualg": "https://upload.wikimedia.org/wikipedia/fr/5/51/Logo_Sporting_Union_Agen_Lot-et-Garonne_2020.svg",
+          "Biarritz Olympique": "https://upload.wikimedia.org/wikipedia/fr/thumb/9/94/B_O.svg/375px-B_O.svg.png",
+          "Asm Clermont Auvergne": "https://upload.wikimedia.org/wikipedia/fr/thumb/0/0e/Logo_ASM_Clermont_Auvergne_2004.svg/593px-Logo_ASM_Clermont_Auvergne_2004.svg.png",
+          "Toulouse": "https://www.allrugby.com/img/logo/clubs/201/toulouse-2020.png",
+          "Montpellier": "https://upload.wikimedia.org/wikipedia/fr/thumb/d/d9/Logo_Montpellier_H%C3%A9rault_rugby_2013.svg/langfr-250px-Logo_Montpellier_H%C3%A9rault_rugby_2013.svg.png",
+          "La Rochelle": "https://upload.wikimedia.org/wikipedia/fr/thumb/4/44/Logo_Stade_rochelais_2016.svg/701px-Logo_Stade_rochelais_2016.svg.png?20180529224827",
+          "Lou": "https://upload.wikimedia.org/wikipedia/fr/thumb/2/25/Lyon_olympique_universitaire.svg/1200px-Lyon_olympique_universitaire.svg.png",
+          "Pau": "https://upload.wikimedia.org/wikipedia/fr/thumb/9/91/Section_Paloise_logo.svg/1200px-Section_Paloise_logo.svg.png",
+          "Perpignan": "https://www.allrugby.com/img/logo/clubs/227/perpignan-2020.png",
+          "Provence Rugby": "https://upload.wikimedia.org/wikipedia/fr/thumb/2/23/Logo_Provence_rugby_2015.svg/700px-Logo_Provence_rugby_2015.svg.png?20190223214846",
+          "Us Oyonnax Rugby": "https://www.allrugby.com/img/logo/clubs/221/oyonnax-2020.png",
+          "Rouen": "https://www.allrugby.com/img/logo/clubs/232/rouen-normandie-2020.png",
+          "Racing 92": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/Racing_92_%28logo%29.svg/1200px-Racing_92_%28logo%29.svg.png",
+          "Rugby Club Toulonnais": "https://upload.wikimedia.org/wikipedia/fr/thumb/5/5a/Logo_Rugby_club_toulonnais.svg/1622px-Logo_Rugby_club_toulonnais.svg.png",
+          "Stade Francais Paris": "https://upload.wikimedia.org/wikipedia/fr/thumb/0/0f/Logo_Stade_fran%C3%A7ais_PR_2018.svg/1200px-Logo_Stade_fran%C3%A7ais_PR_2018.svg.png",
+          "Stade Montois Rugby": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Stade_Montois_Rugby_Pro.svg/604px-Stade_Montois_Rugby_Pro.svg.png",
+          "Stade Toulousain": "https://upload.wikimedia.org/wikipedia/fr/thumb/0/01/Logo_Stade_Toulousain_Rugby.svg/882px-Logo_Stade_Toulousain_Rugby.svg.png",
+          "Saxv": "https://upload.wikimedia.org/wikipedia/fr/7/7a/SA_XV_Charente_Rugby_logo_2014.png",
+          "Rcvannes": "https://upload.wikimedia.org/wikipedia/fr/thumb/7/74/Logo_RC_Vannes_-_2022.svg/1200px-Logo_RC_Vannes_-_2022.svg.png",
+          "Us Dax Rugby Landes": "https://upload.wikimedia.org/wikipedia/fr/thumb/7/7d/Logo_US_Dax_Rugby_Landes_-_2018.svg/1200px-Logo_US_Dax_Rugby_Landes_-_2018.svg.png",
+          "Us Oyonnax Rugby": "https://upload.wikimedia.org/wikipedia/fr/thumb/9/9d/Logo_Oyonnax_rugby_2018.svg/789px-Logo_Oyonnax_rugby_2018.svg.png?20180531233720",
+          "Uson Nevers Rugby": "https://upload.wikimedia.org/wikipedia/fr/thumb/4/4a/Logo_USON_Nevers_2016.svg/1200px-Logo_USON_Nevers_2016.svg.png",
+          "Usm": "https://upload.wikimedia.org/wikipedia/fr/thumb/9/92/Logo_US_Montalbanaise_-_2017.svg/1200px-Logo_US_Montalbanaise_-_2017.svg.png",
+          "Usap": "https://upload.wikimedia.org/wikipedia/fr/thumb/7/77/Logo_USA_Perpignan_2017.svg/1618px-Logo_USA_Perpignan_2017.svg.png",
+          "Vrdr": "https://upload.wikimedia.org/wikipedia/fr/thumb/7/7c/Logo_Valence_Romans_Dr%C3%B4me_Rugby_-_2019.svg/978px-Logo_Valence_Romans_Dr%C3%B4me_Rugby_-_2019.svg.png"
+        }
+
+        const getFlagUrl = (pays) => {
+          const map = {
+            "Allemagne": "de", "France": "fr", "Argentine": "ar", "Nouvelle-Zélande": "nz", "Afrique du sud": "za",
+            "Angleterre": "gb", "Australie": "au", "Belgique": "be", "Cameroun": "cm", "Canada": "ca", "Chili": "cl", "Colombie": "co", "Espagne": "es", "Etats-Unis": "us", "Fidji": "fj", "Géorgie": "ge",
+            "Irlande": "ie", "Îles Cook": "ck", "Écosse": "gb-sct", "Ecosse": "gb-sct", "Moldavie": "md", "Namibie": "na", "Pays de Galles": "gb-wls", "Pays-de-Galles": "gb-wls", "Pays-Bas": "nl",
+            "Roumanie": "ro", "République démocratique du Congo": "cd", "Russie": "ru", "Portugal": "pt", "Italie": "it", "Samoa": "ws", "Tonga": "to", "Japon": "jp", "Uruguay": "uy", "Zimbabwe": "zw"
+          }
+          return `https://flagcdn.com/h40/${map[pays] || 'un'}.png`
+        }
+
+        const getClubLogoUrl = (club) => {
+          return logos[club] || 'https://via.placeholder.com/24?text=?'
+        }
+
+       watch(selectedDivision, (newDivision) => {
+        // Si le club sélectionné ne correspond plus à la division, on le réinitialise
+        const clubValide = data.value.find(p => p.club === selectedClub.value && p.division === newDivision)
+        if (!clubValide) {
+          selectedClub.value = 'Tout'
+        }
+      })
+
+      watch(selectedClub, (newClub) => {
+        if (newClub !== 'Tout') {
+          const joueur = data.value.find(p => p.club === newClub)
+          if (joueur) {
+            selectedDivision.value = joueur.division
+          }
+        }
+      })
+
+        const normalizePoste = (poste) => {
+          return poste
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, "")
+            .toLowerCase()
+        }
+
+        return {
+          selectedClub,
+          selectedPoste,
+          selectedDivision,
+          uniqueClubs,
+          uniquePostes,
+          uniqueDivisions,
+          sortedPlayersGroupedByPoste,
+          sortOptions,
+          sortBy,
+          getSortIcon,
+          calculateAge,
+          getFlagUrl,
+          getClubLogoUrl,
+          normalizePoste,
+          getLeftLabel,
+          getRightLabel,
+          showVignettes
+        }
+      }
+    }).mount('#app')
+
+  </script>
+
+
+
+
+  <script src="js/compteur.js"></script>
+  <script src="js/temps_site.js"></script>
+</body>
+
+</html>

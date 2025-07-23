@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Statistiques des Visites</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      max-width: 1000px;
+      margin: auto;
+      background-color: #f9f9f9;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 2rem;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      font-size: 14px;
+    }
+    th {
+      background-color: #eee;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    .center {
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 2rem;
+    }
+    #chartContainer {
+      max-width: 700px;
+      margin: 0 auto 3rem;
+    }
+    .export{
+        text-align: center;
+        margin-bottom: 2rem;
+        background-color: #e9e9e9;
+        padding: 1px 0px 20px 0px;
+        border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Statistiques de visites</h1>
+    <div class="export">
+        <h2>Exporter les données</h2>
+
+        <label>Du : <input type="date" id="date-debut"></label>
+        <label>Au : <input type="date" id="date-fin"></label>
+
+        <select id="export-type">
+            <option value="jour">Visites par jour</option>
+            <option value="historique">Historique détaillé</option>
+            <option value="temps">Temps passé</option>
+        </select>
+
+        <button id="exporter-btn">Exporter les données</button>
+    </div>
+
+  <div id="chartContainer">
+    <canvas id="visitesChart" height="100"></canvas>
+  </div>
+
+  <div class="center">
+    <p>Total de visiteurs uniques : <strong id="total">Chargement...</strong></p>
+  </div>
+
+  <h2>Visites par jour</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Nombre de visites</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <!-- Rempli par JavaScript -->
+    </tbody>
+  </table>
+
+  <h2>Historique détaillé des visites</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date & Heure</th>
+        <th>IP</th>
+        <th>Appareil / Navigateur</th>
+      </tr>
+    </thead>
+    <tbody id="historique">
+      <!-- Rempli par JavaScript -->
+    </tbody>
+  </table>
+
+  <h2>Temps passé sur le site</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date & Heure</th>
+        <th>IP</th>
+        <th>Temps (en secondes)</th>
+      </tr>
+    </thead>
+    <tbody id="temps">
+      <!-- Rempli par JavaScript -->
+    </tbody>
+  </table>
+
+  <script>
+    async function chargerStats() {
+      const statsRes = await fetch('datas/stats_visites.json')
+      const stats = await statsRes.json()
+
+      // Total visiteurs uniques
+      document.getElementById('total').textContent = stats.total
+
+      // Remplir tableau visites par jour
+      const jours = Object.keys(stats.par_jour).sort().reverse()
+      const tbody = document.getElementById('tbody')
+      jours.forEach(date => {
+        const tr = document.createElement('tr')
+        tr.innerHTML = `<td>${date}</td><td>${stats.par_jour[date]}</td>`
+        tbody.appendChild(tr)
+      })
+
+      // Historique visites détaillées
+      const historique = stats.historique || []
+      const histoTbody = document.getElementById('historique')
+      historique.slice().reverse().forEach(entry => {
+        const tr = document.createElement('tr')
+        tr.innerHTML = `<td>${entry.datetime}</td><td>${entry.ip}</td><td>${entry.user_agent}</td>`
+        histoTbody.appendChild(tr)
+      })
+
+      // Graphe Chart.js - visites par jour
+      const ctx = document.getElementById('visitesChart').getContext('2d')
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: jours.reverse(),
+          datasets: [{
+            label: 'Visites par jour',
+            data: jours.map(date => stats.par_jour[date]),
+            backgroundColor: '#4CAF50'
+          }]
+        },
+        options: {
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      })
+    }
+
+    async function chargerTemps() {
+      const tempsRes = await fetch('datas/temps_visites.json')
+      const temps = await tempsRes.json()
+
+      const tbody = document.getElementById('temps')
+      temps.slice().reverse().forEach(entry => {
+        const tr = document.createElement('tr')
+        tr.innerHTML = `<td>${entry.datetime}</td><td>${entry.ip}</td><td>${entry.duree_secondes}</td>`
+        tbody.appendChild(tr)
+      })
+    }
+
+    chargerStats()
+    chargerTemps()
+  </script>
+
+  <script>
+    // Écoute le clic sur le bouton d’exportation
+    document.getElementById('exporter-btn').addEventListener('click', async () => {
+
+        // Récupère les valeurs des champs de sélection de date et du type d’export
+        const debut = document.getElementById('date-debut').value
+        const fin = document.getElementById('date-fin').value
+        const type = document.getElementById('export-type').value
+
+        // Crée les paramètres de l’URL à envoyer au script PHP
+        const params = new URLSearchParams({ type })
+
+        // Si une date de début est renseignée, l’ajoute aux paramètres
+        if (debut) params.append('debut', debut)
+
+        // Si une date de fin est renseignée, l’ajoute aux paramètres
+        if (fin) params.append('fin', fin)
+
+        // Envoie une requête à export_csv.php avec les paramètres construits
+        const response = await fetch('export_csv.php?' + params.toString())
+
+        // Récupère le contenu de la réponse sous forme de fichier (Blob)
+        const blob = await response.blob()
+
+        // Crée une URL temporaire pour ce fichier
+        const url = window.URL.createObjectURL(blob)
+
+        // Crée un lien <a> invisible pour déclencher le téléchargement
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `export_${type}.csv`  // Nom du fichier téléchargé
+
+        // Ajoute le lien à la page, déclenche le clic, puis le supprime
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+    })
+</script>
+
+
+
+</body>
+</html>
